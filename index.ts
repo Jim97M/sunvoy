@@ -56,7 +56,6 @@ async function loginUser(): Promise<string | undefined> {
     const $ = cheerio.load(response.data);
     return $('input[name=nonce]').val()?.toString();
   } catch (err) {
-    console.warn("Failed getting nonce:", err);
     return undefined;
   }
 }
@@ -83,7 +82,6 @@ async function performLogin(nonce?: string): Promise<void> {
           ? `${sessionCookies}; ${newCookies}` 
           : newCookies;
       }
-      console.log('✓ Login successful!');
     } else {
       throw new Error(`Unexpected response: ${res.status}`);
     }
@@ -102,9 +100,8 @@ async function saveUserList(): Promise<void> {
 
     const users: UserProfile[] = response.data;
     fs.writeFileSync('users.json', JSON.stringify({ users }, null, 2));
-    console.log("Saved user list");
+
   } catch (err) {
-    console.error("Couldn't save users:", err);
   }
 }
 
@@ -120,7 +117,6 @@ function parseTokenSettings(html: string): TokenData {
   };
 }
 
-// Generate security checkcode
 function createCheckcode(
   apiuser: string,
   access_token: string,
@@ -140,13 +136,11 @@ function createCheckcode(
     .toUpperCase();
 }
 
-// Get CSRF token from cookies
 function getCsrfToken(cookies: string): string | undefined {
   const match = cookies.split('; ').find(c => c.startsWith('_csrf_token='));
   return match?.split('=')[1];
 }
 
-// Fetch token settings from protected page
 async function retrieveTokenSettings(): Promise<TokenData> {
   const res = await httpClient.get(TOKEN_PAGE_URL, {
     headers: { Cookie: sessionCookies },
@@ -155,7 +149,6 @@ async function retrieveTokenSettings(): Promise<TokenData> {
 }
 
 
-// Add manual user entry
 async function addManualUser(): Promise<void> {
   const FILE_PATH = 'users.json';
   const demoUser: UserProfile = {
@@ -165,7 +158,6 @@ async function addManualUser(): Promise<void> {
     email: "demo@example.org"
   };
 
-  // Initialize file if missing
   if (!fs.existsSync(FILE_PATH)) {
     fs.writeFileSync(FILE_PATH, JSON.stringify({ users: [] }, null, 2));
   }
@@ -174,10 +166,8 @@ async function addManualUser(): Promise<void> {
     fs.readFileSync(FILE_PATH, 'utf-8')
   );
 
-  // Check if exists before adding
   const exists = data.users.some(u => u.id === demoUser.id);
   if (exists) {
-    console.log("User already exists, skipping");
     return;
   }
 
@@ -222,9 +212,7 @@ async function updateCurrentUser(): Promise<void> {
     
     fileData.currentUser = currentUser;
     fs.writeFileSync('users.json', JSON.stringify(fileData, null, 2));
-    console.log("Updated current user");
   } catch (error) {
-    console.error("Error updating current user:", error);
   }
 }
 function parseCurrentUser(data: any): UserProfile {
@@ -239,8 +227,6 @@ function parseCurrentUser(data: any): UserProfile {
 
 (async function main() {
   try {
-    console.log("Starting script...");
-    
     const doesOn = await loginUser();
     await performLogin(doesOn);
     await retrieveTokenSettings();
@@ -248,7 +234,6 @@ function parseCurrentUser(data: any): UserProfile {
     await updateCurrentUser();
     await addManualUser();
   } catch (err) {
-    console.error("!! Critical failure:", err);
     process.exit(1);
   }
 })();
