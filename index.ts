@@ -8,6 +8,8 @@ const LOGIN_URL = process.env.LOGIN_URL!;
 const USERS_ENDPOINT = process.env.USERS_LIST!;
 const USER_EMAIL = process.env.USER_EMAIL!;
 const USER_PASSWORD = process.env.USER_PASSWORD!;
+const USER_SETTINGS = process.env.USER_SETTINGS!;
+
 
 const TOKEN_PAGE_URL = process.env.TOKEN_PAGE!;
 
@@ -29,6 +31,11 @@ interface TokenData {
   language: string;
 }
 
+
+interface UserDataFile {
+  users: UserProfile[];
+  currentUser?: UserProfile;
+}
 
 const httpClient: any = axios.create({
   withCredentials: true,
@@ -148,6 +155,86 @@ async function retrieveTokenSettings(): Promise<TokenData> {
 }
 
 
+// Add manual user entry
+async function addManualUser(): Promise<void> {
+  const FILE_PATH = 'users.json';
+  const demoUser: UserProfile = {
+    id: "88619348-dbd9-4334-9290-241a7f17dd31",
+    firstName: "John",
+    lastName: "Doe",
+    email: "demo@example.org"
+  };
+
+  // Initialize file if missing
+  if (!fs.existsSync(FILE_PATH)) {
+    fs.writeFileSync(FILE_PATH, JSON.stringify({ users: [] }, null, 2));
+  }
+
+  const data: UserDataFile = JSON.parse(
+    fs.readFileSync(FILE_PATH, 'utf-8')
+  );
+
+  // Check if exists before adding
+  const exists = data.users.some(u => u.id === demoUser.id);
+  if (exists) {
+    console.log("User already exists, skipping");
+    return;
+  }
+
+  data.users.push(demoUser);
+  fs.writeFileSync(FILE_PATH, JSON.stringify(data, null, 2));
+  console.log("Added manual user");
+}
+
+
+async function updateCurrentUser(): Promise<void> {
+  try {
+    const tokens = await retrieveTokenSettings();
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const checkcode = createCheckcode(
+      tokens.apiuser,
+      tokens.access_token,
+      tokens.openId,
+      tokens.operateId,
+      timestamp,
+      tokens.userId
+    );
+
+    const payload = { ...tokens, timestamp, checkcode };
+    const csrfToken = getCsrfToken(sessionCookies) || '';
+
+    const settingsRes = await httpClient.post(USER_SETTINGS, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': sessionCookies,
+        'X-CSRF-Token': csrfToken,
+        'Referer': TOKEN_PAGE_URL,
+        'Origin': new URL(TOKEN_PAGE_URL).origin,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+    });
+
+    const currentUser = parseCurrentUser(settingsRes.data);
+    const fileData: UserDataFile = JSON.parse(
+      fs.readFileSync('users.json', 'utf-8')
+    );
+    
+    fileData.currentUser = currentUser;
+    fs.writeFileSync('users.json', JSON.stringify(fileData, null, 2));
+    console.log("Updated current user");
+  } catch (error) {
+    console.error("Error updating current user:", error);
+  }
+}
+function parseCurrentUser(data: any): UserProfile {
+  return {
+    email: data.email,
+    firstName: data.firstName,
+    lastName: data.lastName,
+    id: data.id,
+  };
+}
 
 
 (async function main() {
@@ -158,7 +245,8 @@ async function retrieveTokenSettings(): Promise<TokenData> {
     await performLogin(doesOn);
     await retrieveTokenSettings();
     await saveUserList();
-    
+    await updateCurrentUser();
+    await addManualUser();
   } catch (err) {
     console.error("!! Critical failure:", err);
     process.exit(1);
