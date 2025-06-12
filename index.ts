@@ -2,11 +2,14 @@ import "dotenv/config";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import fs from "fs";
+import crypto from "crypto";
 
 const LOGIN_URL = process.env.LOGIN_URL!;
 const USERS_ENDPOINT = process.env.USERS_LIST!;
 const USER_EMAIL = process.env.USER_EMAIL!;
 const USER_PASSWORD = process.env.USER_PASSWORD!;
+
+const TOKEN_PAGE_URL = process.env.TOKEN_PAGE!;
 
 let sessionCookies = ""; 
 
@@ -15,6 +18,15 @@ interface UserProfile {
   firstName: string;
   lastName: string;
   email: string;
+}
+
+interface TokenData {
+  access_token: string;
+  openId: string;
+  userId: string;
+  apiuser: string;
+  operateId: string;
+  language: string;
 }
 
 
@@ -42,7 +54,6 @@ async function loginUser(): Promise<string | undefined> {
   }
 }
 
-// Main login function
 async function performLogin(nonce?: string): Promise<void> {
   const params = new URLSearchParams();
   params.append('username', USER_EMAIL);
@@ -58,7 +69,6 @@ async function performLogin(nonce?: string): Promise<void> {
       },
     });
 
-    // Handle successful login
     if (res.status === 302 && res.headers.location === '/list') {
       if (res.headers['set-cookie']) {
         const newCookies = res.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
@@ -72,12 +82,11 @@ async function performLogin(nonce?: string): Promise<void> {
     }
   } catch (error) {
     console.error('!! Login failed:', error);
-    throw error;  // Re-throw for caller
+    throw error; 
   }
 }
 
 
-// Save user list to file
 async function saveUserList(): Promise<void> {
   try {
     const response = await httpClient.post(USERS_ENDPOINT, null, {
@@ -92,6 +101,54 @@ async function saveUserList(): Promise<void> {
   }
 }
 
+function parseTokenSettings(html: string): TokenData {
+  const $ = cheerio.load(html);
+  return {
+    access_token: $('#access_token').val() as string,
+    openId: $('#openId').val() as string,
+    userId: $('#userId').val() as string,
+    apiuser: $('#apiuser').val() as string,
+    operateId: $('#operateId').val() as string,
+    language: $('#language').val() as string,
+  };
+}
+
+// Generate security checkcode
+function createCheckcode(
+  apiuser: string,
+  access_token: string,
+  openId: string,
+  operateId: string,
+  timestamp: string,
+  userId: string
+): string {
+  const raw = [apiuser, access_token, openId, operateId, timestamp, userId]
+    .map(p => (p || '').trim())
+    .join('');
+  
+  return crypto
+    .createHmac('sha1', access_token)
+    .update(raw)
+    .digest('hex')
+    .toUpperCase();
+}
+
+// Get CSRF token from cookies
+function getCsrfToken(cookies: string): string | undefined {
+  const match = cookies.split('; ').find(c => c.startsWith('_csrf_token='));
+  return match?.split('=')[1];
+}
+
+// Fetch token settings from protected page
+async function retrieveTokenSettings(): Promise<TokenData> {
+  const res = await httpClient.get(TOKEN_PAGE_URL, {
+    headers: { Cookie: sessionCookies },
+  });
+  return parseTokenSettings(res.data);
+}
+
+
+
 
 (async function main() {
   try {
@@ -99,7 +156,7 @@ async function saveUserList(): Promise<void> {
     
     const doesOn = await loginUser();
     await performLogin(doesOn);
-
+    await retrieveTokenSettings();
     await saveUserList();
     
   } catch (err) {
