@@ -77,6 +77,21 @@ async function performLogin(nonce?: string): Promise<void> {
 }
 
 
+// Save user list to file
+async function saveUserList(): Promise<void> {
+  try {
+    const response = await httpClient.post(USERS_ENDPOINT, null, {
+      headers: { Cookie: sessionCookies },
+    });
+
+    const users: UserProfile[] = response.data;
+    fs.writeFileSync('users.json', JSON.stringify({ users }, null, 2));
+    console.log("Saved user list");
+  } catch (err) {
+    console.error("Couldn't save users:", err);
+  }
+}
+
 
 (async function main() {
   try {
@@ -84,6 +99,8 @@ async function performLogin(nonce?: string): Promise<void> {
     
     const doesOn = await loginUser();
     await performLogin(doesOn);
+
+    await saveUserList();
     
   } catch (err) {
     console.error("!! Critical failure:", err);
